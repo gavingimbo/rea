@@ -18,6 +18,19 @@ AMAP_INTERVAL = 253952
 FIRST_AMAP = 0x4400
 
 
+# Inverse permutation table for NDB_CRYPT_PERMUTE ([MS-PST] 5.1, mpbbI).
+_PERMUTE_DECODE = bytes.fromhex(
+    "47f1b4e60b6a7248854e9eebe2f89453e0bba002e85a09abdbe3bac67cc310dd"
+    "39059630f53760828cc9134a6b1df3fb8f2697ca911701c4322d6e3195ffd923"
+    "d1005e79dc443b1a28c5615720903d83b943be67d2464276c06d5b7eb20f1629"
+    "3ca903540dda5ddff6b7c762cd8d06d3695c86d614f7a56675acb1e94521700c"
+    "879f74a4224c6fbf1f56aa2eb3783350b0a392bccf191ca763cb1e4d3e4b1b9b"
+    "4fe7f0eead3ab55904ea40552551e57a893868527bfc27aed7bdfa07f4cc8e5f"
+    "ef359c842b15d5773449b6120a7f7188fd9d18417d93d8582ccefe24afdeb836"
+    "c8a180a69998a82f0e816573e4c2a28ad4e111d0088b2af2ed9a643fc16cf9ec"
+)
+
+
 def crc32(data: bytes) -> int:
     return zlib.crc32(data, 0xFFFFFFFF) ^ 0xFFFFFFFF
 
@@ -169,7 +182,10 @@ class Checker:
 
     def read_block(self, bid: int) -> bytes:
         ib, cb, _ = self.bbt[bid & ~1]
-        return self.data[ib:ib + cb]
+        raw = self.data[ib:ib + cb]
+        if self.crypt == 1 and not bid & 2:  # only external blocks are encoded
+            return raw.translate(_PERMUTE_DECODE)
+        return raw
 
     def nodes(self) -> None:
         nbt_raw: list[bytes] = []
