@@ -13,9 +13,11 @@ from typing import BinaryIO
 
 from ..model import Address, Attachment, MailMessage
 from .ltp import (
+    Heap,
     NodeData,
     SubnodeAllocator,
     TableLayout,
+    build_bth,
     build_pc,
     build_tc,
     layout,
@@ -44,8 +46,15 @@ NID_SEARCH_DOMAIN_OBJECT = 0x261
 NID_HIERARCHY_TABLE_TEMPLATE = 0x60D
 NID_CONTENTS_TABLE_TEMPLATE = 0x60E
 NID_ASSOC_CONTENTS_TABLE_TEMPLATE = 0x60F
+NID_SEARCH_CONTENTS_TABLE_TEMPLATE = 0x610
+NID_RECEIVE_FOLDER_TABLE = 0x62B
+NID_OUTGOING_QUEUE_TABLE = 0x64C
 NID_ATTACHMENT_TABLE = 0x671
 NID_RECIPIENT_TABLE = 0x692
+NID_TABLE_0X6B6 = 0x6B6  # NID types 0x16-0x18: undocumented, Outlook-created
+NID_TABLE_0X6D7 = 0x6D7
+NID_TABLE_0X6F8 = 0x6F8
+NID_INDEX_0XC01 = 0xC01  # undocumented GUID -> NID index (heap client 0x9C)
 
 # Property tags used below.
 PR_IMPORTANCE = 0x00170003
@@ -186,6 +195,42 @@ RECIPIENT_COLUMNS = {
     0x5FFD0003: (100, 4, 27), 0x5FFF0003: (104, 4, 28), 0x67F20003: (0, 4, 0),
     0x67F30003: (4, 4, 1),
 }
+# Empty system tables Outlook adds when it first opens a PST read-write. A
+# reader that opens the file read-only (such as the New Outlook import) cannot
+# add them, so they are written up front with Outlook's column layouts.
+SYSTEM_TABLE_COLUMNS = {
+    NID_SEARCH_CONTENTS_TABLE_TEMPLATE: {
+        0x00170003: (28, 4, 7), 0x001A001F: (20, 4, 5), 0x00360003: (60, 4, 16),
+        0x0037001F: (36, 4, 9), 0x0042001F: (32, 4, 8), 0x0057000B: (72, 1, 14),
+        0x0058000B: (73, 1, 15), 0x0E03001F: (56, 4, 13), 0x0E04001F: (52, 4, 12),
+        0x0E05001F: (12, 4, 3), 0x0E060040: (40, 8, 10), 0x0E070003: (24, 4, 6),
+        0x0E080003: (48, 4, 11), 0x0E170003: (16, 4, 4), 0x0E2A000B: (74, 1, 17),
+        0x30080040: (64, 8, 18), 0x67F10003: (8, 4, 2), 0x67F20003: (0, 4, 0),
+        0x67F30003: (4, 4, 1),
+    },
+    NID_RECEIVE_FOLDER_TABLE: {
+        0x001A001F: (12, 4, 3), 0x66050003: (8, 4, 2), 0x67F20003: (0, 4, 0),
+        0x67F30003: (4, 4, 1),
+    },
+    NID_OUTGOING_QUEUE_TABLE: {
+        0x00390040: (16, 8, 4), 0x0E100003: (12, 4, 3), 0x0E140003: (8, 4, 2),
+        0x67F20003: (0, 4, 0), 0x67F30003: (4, 4, 1),
+    },
+    NID_TABLE_0X6B6: {
+        0x0E330014: (8, 8, 2), 0x0E370102: (16, 4, 3), 0x0E380003: (20, 4, 4),
+        0x67F20003: (0, 4, 0), 0x67F30003: (4, 4, 1),
+    },
+    NID_TABLE_0X6D7: {
+        0x001A001F: (36, 4, 8), 0x0E300102: (16, 4, 4), 0x0E310102: (12, 4, 3),
+        0x0E330014: (28, 8, 7), 0x0E340102: (24, 4, 6), 0x0E380003: (20, 4, 5),
+        0x0E3E0102: (8, 4, 2), 0x67F20003: (0, 4, 0), 0x67F30003: (4, 4, 1),
+    },
+    NID_TABLE_0X6F8: {
+        0x0E330014: (16, 8, 3), 0x30070040: (8, 8, 2), 0x67F20003: (0, 4, 0),
+        0x67F30003: (4, 4, 1),
+    },
+}
+
 ATTACHMENT_TAGS = [
     PR_ATTACH_SIZE, PR_ATTACH_FILENAME, PR_ATTACH_METHOD, PR_RENDERING_POSITION,
     PR_ATTACH_LONG_FILENAME, PR_ATTACH_MIME_TAG, PR_ATTACHMENT_HIDDEN,
@@ -449,8 +494,16 @@ class PstWriter:
             (NID_ATTACHMENT_TABLE, ATTACHMENT_LAYOUT),
             (NID_RECIPIENT_TABLE, RECIPIENT_LAYOUT),
         ]
+        empty += [(nid, layout(cols, cols)) for nid, cols in SYSTEM_TABLE_COLUMNS.items()]
         for nid, table in empty:
             ndb.add_node(nid, *write_node(ndb, build_tc(table, [])))
+        # As Outlook writes it: the heap root holds the HID of an empty BTH
+        # keyed by 16-byte GUIDs, allocated right after it (HID 0x20 -> 0x40).
+        index = Heap(0x9C)
+        root = index.alloc(struct.pack("<I", 0x40))
+        if build_bth(index, 16, 4, []) != 0x40:
+            raise AssertionError("unexpected heap layout for node 0xC01")
+        ndb.add_node(NID_INDEX_0XC01, *write_node(ndb, NodeData(index.build(root))))
         ndb.add_node(NID_NAME_TO_ID_MAP, *write_node(ndb, build_pc(name_to_id_map(NAMED_PROPERTIES))))
         store = {
             PR_RECORD_KEY: self._uid,

@@ -112,6 +112,16 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(amap[:2], b"\xff\xff")
         self.assertTrue(amap[2] & 0x80)
 
+    def test_writes_outlook_system_nodes(self) -> None:
+        # Nodes classic Outlook adds when it first opens a PST read-write; the
+        # New Outlook import opens read-only and reported "Could not open the
+        # PST file" without them. Encoding matches Outlook's default as well.
+        checker = Checker(self.pst())
+        checker.run()
+        for nid in (0x610, 0x62B, 0x64C, 0x6B6, 0x6D7, 0x6F8, 0xC01):
+            self.assertIn(nid, checker.nbt, hex(nid))
+        self.assertEqual(checker.crypt, 1)  # NDB_CRYPT_PERMUTE
+
     def test_folder_filters(self) -> None:
         path = os.path.join(self.tmp, "f.pst")
         report = convert(self.olm, path, "pst", Options(include=["Inbox"], exclude=["inbox/projects"]))

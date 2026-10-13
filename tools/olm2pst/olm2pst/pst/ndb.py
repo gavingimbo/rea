@@ -69,6 +69,22 @@ _RGNID_DEFAULTS = {
 }
 
 
+NDB_CRYPT_PERMUTE = 0x01
+
+# Substitution table for NDB_CRYPT_PERMUTE ([MS-PST] 5.1, mpbbR), the
+# "compressible encryption" Outlook applies to every PST it creates.
+_PERMUTE_ENCODE = bytes.fromhex(
+    "41361362a8216ebbf416cc047f64e85d1ef2cb2a74c55e35d295479e962d9a88"
+    "4c7d843fdbac31b6485ff6c4d8398be7233b388ec8c1df25b120a546604e9cfb"
+    "aad35651457c550007c92b9d859b09a08fadb30f63ab894bd7a7155a716642bf"
+    "264a6b98faea7753b270052cfd593a867ece06eb827857c78d43afb41cd45bcd"
+    "e2e9274fc3087280cfb0eff5286dbe304d3492d50e3c2232e5e4f99fc2d10a81"
+    "12e1ee918376e397e6618a1779a4b7dc907a5c8c02a6ca69de501a1193b95287"
+    "58fced1d37491b6ae0293399bd6cd994f340546ff0c673b8d63e6518441fdd67"
+    "10f10c19ecae03a1147ba90bfff8a3c0a201f72ebc2468750dfeba2fb5d0da3d"
+)
+
+
 def make_nid(nid_type: int, index: int) -> int:
     return (index << 5) | nid_type
 
@@ -218,6 +234,8 @@ class NdbWriter:
         size = _align(cb + BLOCK_TRAILER_SIZE, SLOT_SIZE)
         bid = self._new_block_bid(internal)
         ib = self._alloc(size, SLOT_SIZE)
+        if not internal:  # only external data blocks are encoded (2.2.2.8.3.1.1)
+            data = data.translate(_PERMUTE_ENCODE)
         trailer = struct.pack("<HHIQ", cb, signature(ib, bid), crc32(data), bid)
         self._f.seek(ib)
         self._f.write(data)
@@ -412,7 +430,7 @@ class NdbWriter:
         h[0x100:0x180] = b"\xff" * 128
         h[0x180:0x200] = b"\xff" * 128
         h[0x200] = 0x80
-        h[0x201] = 0x00  # NDB_CRYPT_NONE
+        h[0x201] = NDB_CRYPT_PERMUTE
         struct.pack_into("<Q", h, 0x204, self._next_block << 2)
         struct.pack_into("<I", h, 4, crc32(bytes(h[8:8 + 471])))
         struct.pack_into("<I", h, 0x20C, crc32(bytes(h[8:8 + 516])))

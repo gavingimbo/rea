@@ -118,8 +118,12 @@ builds the two exes with PyInstaller and checks the exe's output with the verifi
   not allocated in AMAP", and Outlook can then overwrite data in the file.
   Convert again from the `.olm` rather than repairing an old PST. The bit
   order is now checked against Outlook-created PSTs and by a regression test.
-- Outlook has opened a converted file and added its own search and index
-  tables to it. A full import of a large archive with the fixed version is
+- 0.1.2 writes the system tables Outlook adds when it first opens a PST
+  (search template, receive-folder, outgoing-queue and three replication
+  tables, plus an index node). It also uses Outlook's default "compressible"
+  encoding. New Outlook's import opens the file read-only and couldn't open
+  PSTs without these tables. Classic Outlook has opened a converted file and
+  added its own search and index tables to it. A full import of a large archive with the fixed version is
   still to be confirmed, so test on a copy first. If Outlook reports a
   problem, send the `SCANPST.EXE` report; it pinpoints the cause.
 - The exact layout of FMap/FPMap pages in files over 32 MB / 2 GB isn't fully
