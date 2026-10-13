@@ -1,0 +1,5 @@
+tests
+windows
+**/__pycache__
+*.pst
+*.olm
