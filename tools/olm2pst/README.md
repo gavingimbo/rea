@@ -113,11 +113,15 @@ builds the two exes with PyInstaller and checks the exe's output with the verifi
 
 ### Known limitations
 
-- **Not yet opened in real Microsoft Outlook.** No Windows/Outlook machine was
-  available while building this. The files follow the spec and pass the checks
-  above, but please test on a copy first. If Outlook reports a problem, its
-  Inbox Repair Tool (`SCANPST.EXE`) can usually fix structure issues, and
-  reporting what it says would help fix the root cause.
+- **Fixed in 0.1.1: PSTs from 0.1.0 can't be imported.** Version 0.1.0 wrote
+  the allocation-map bits in the wrong order. SCANPST reports this as "Block is
+  not allocated in AMAP", and Outlook can then overwrite data in the file.
+  Convert again from the `.olm` rather than repairing an old PST. The bit
+  order is now checked against Outlook-created PSTs and by a regression test.
+- Outlook has opened a converted file and added its own search and index
+  tables to it. A full import of a large archive with the fixed version is
+  still to be confirmed, so test on a copy first. If Outlook reports a
+  problem, send the `SCANPST.EXE` report; it pinpoints the cause.
 - The exact layout of FMap/FPMap pages in files over 32 MB / 2 GB isn't fully
   described in [MS-PST]. Outlook 2007 SP2 and later don't use these pages.
 - A single message larger than the `--split` size goes into its own file,

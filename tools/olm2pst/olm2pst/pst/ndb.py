@@ -122,6 +122,13 @@ def _map_pages(section: int) -> list[int]:
     return pages
 
 
+def _slot_bit(slot: int) -> int:
+    """Mask for a 64-byte slot within its AMap byte. Slots are numbered from the
+    most significant bit, as in Outlook-created files (the spec leaves the bit
+    order implicit; SCANPST rejects the opposite order)."""
+    return 0x80 >> (slot % 8)
+
+
 def _section_start(section: int) -> int:
     return FIRST_AMAP + section * AMAP_INTERVAL
 
@@ -177,7 +184,7 @@ class NdbWriter:
             # Map pages are allocated out of their own section.
             used = len(_map_pages(len(self._sections))) * (PAGE_SIZE // SLOT_SIZE)
             for slot in range(used):
-                bits[slot // 8] |= 1 << (slot % 8)
+                bits[slot // 8] |= _slot_bit(slot)
             self._sections.append(bits)
         return self._sections[section]
 
@@ -192,7 +199,7 @@ class NdbWriter:
         bits = self._section_bits(section)
         first = (ib - _section_start(section)) // SLOT_SIZE
         for slot in range(first, first + size // SLOT_SIZE):
-            bits[slot // 8] |= 1 << (slot % 8)
+            bits[slot // 8] |= _slot_bit(slot)
         self._cursor = ib + size
         return ib
 
@@ -423,8 +430,8 @@ def _longest_free_run(bits: bytearray) -> int:
         if byte == 0xFF:
             run = 0
             continue
-        for bit in range(8):
-            if byte & (1 << bit):
+        for slot in range(8):
+            if byte & _slot_bit(slot):
                 run = 0
             else:
                 run += 1

@@ -100,6 +100,18 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(payloads, [BIG])
         self.assertEqual(by_subject["Quarterly report"]["Cc"], "Bob <bob@example.com>")
 
+    def test_amap_bit_order_matches_outlook(self) -> None:
+        # Outlook numbers AMap slots from the most significant bit. SCANPST
+        # rejected PSTs written with the opposite order ("Block is not
+        # allocated in AMAP"), and Outlook then reused slots that held data.
+        with open(self.pst(), "rb") as f:
+            f.seek(0x4400)
+            amap = f.read(496)
+        # Slots 0-15 hold the AMap and PMap pages; the first data block starts
+        # at slot 16, i.e. the most significant bit of byte 2.
+        self.assertEqual(amap[:2], b"\xff\xff")
+        self.assertTrue(amap[2] & 0x80)
+
     def test_folder_filters(self) -> None:
         path = os.path.join(self.tmp, "f.pst")
         report = convert(self.olm, path, "pst", Options(include=["Inbox"], exclude=["inbox/projects"]))

@@ -288,7 +288,7 @@ class Checker:
         mismatches = 0
         for n, bits in enumerate(self.amap_bits):
             for s in range(3968):
-                bit = (bits[s // 8] >> (s % 8)) & 1
+                bit = (bits[s // 8] >> (7 - s % 8)) & 1  # most significant bit first, as Outlook
                 if bit != used[n * 3968 + s]:
                     mismatches += 1
                     if mismatches <= 5:
