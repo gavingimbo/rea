@@ -183,17 +183,15 @@ ASSOC_COLUMNS = {
     0x70030003: (24, 4, 6), 0x70040102: (28, 4, 7), 0x70050102: (32, 4, 8),
     0x7006001F: (36, 4, 9), 0x70070003: (40, 4, 10),
 }
-RECIPIENT_COLUMNS = {
-    0x0C150003: (24, 4, 7), 0x0E0F000B: (108, 1, 2), 0x0FF90102: (32, 4, 9),
+# Outlook's recipient table template (0x692), as Outlook rewrote it in a
+# converted PST. The [MS-PST] 3.13 sample lists 28 of its 29 columns, so a
+# layout copied from it has a presence bit (iBit 28) beyond the column count.
+RECIPIENT_TEMPLATE_COLUMNS = {
+    0x0C150003: (24, 4, 7), 0x0E0F000B: (48, 1, 2), 0x0FF90102: (32, 4, 9),
     0x0FFE0003: (36, 4, 10), 0x0FFF0102: (16, 4, 5), 0x3001001F: (20, 4, 6),
     0x3002001F: (8, 4, 3), 0x3003001F: (12, 4, 4), 0x300B0102: (28, 4, 8),
-    0x39000003: (40, 4, 11), 0x39050003: (48, 4, 14), 0x39FE001F: (52, 4, 15),
-    0x39FF001F: (44, 4, 13), 0x3A00001F: (56, 4, 16), 0x3A20001F: (60, 4, 17),
-    0x3A40000B: (109, 1, 12), 0x5FDE0003: (64, 4, 18), 0x5FDF0003: (68, 4, 19),
-    0x5FEB0003: (76, 4, 21), 0x5FEF0003: (80, 4, 22), 0x5FF20003: (84, 4, 23),
-    0x5FF50003: (88, 4, 24), 0x5FF6001F: (92, 4, 25), 0x5FF70102: (96, 4, 26),
-    0x5FFD0003: (100, 4, 27), 0x5FFF0003: (104, 4, 28), 0x67F20003: (0, 4, 0),
-    0x67F30003: (4, 4, 1),
+    0x39000003: (40, 4, 11), 0x39FF001F: (44, 4, 13), 0x3A40000B: (49, 1, 12),
+    0x67F20003: (0, 4, 0), 0x67F30003: (4, 4, 1),
 }
 # Empty system tables Outlook adds when it first opens a PST read-write. A
 # reader that opens the file read-only (such as the New Outlook import) cannot
@@ -239,7 +237,13 @@ ATTACHMENT_TAGS = [
 HIERARCHY_LAYOUT = layout(HIERARCHY_COLUMNS, HIERARCHY_COLUMNS)
 CONTENTS_LAYOUT = layout(CONTENTS_COLUMNS, CONTENTS_COLUMNS)
 ASSOC_LAYOUT = layout(ASSOC_COLUMNS, ASSOC_COLUMNS)
-RECIPIENT_LAYOUT = layout(RECIPIENT_COLUMNS, RECIPIENT_COLUMNS)
+RECIPIENT_TEMPLATE_LAYOUT = layout(RECIPIENT_TEMPLATE_COLUMNS, RECIPIENT_TEMPLATE_COLUMNS)
+# Message recipient tables hold the template columns plus the extra recipient
+# properties written below ([MS-PST] 2.4.5.3.2).
+RECIPIENT_LAYOUT = layout(set(RECIPIENT_TEMPLATE_COLUMNS) | {
+    PR_SMTP_ADDRESS, PR_TRANSMITABLE_DISPLAY_NAME, PR_RECIPIENT_ORDER,
+    PR_RECIPIENT_FLAGS, PR_RECIPIENT_DISPLAY_NAME,
+})
 ATTACHMENT_LAYOUT = layout(ATTACHMENT_TAGS)
 
 _FILETIME_EPOCH = datetime(1601, 1, 1, tzinfo=timezone.utc)
@@ -492,7 +496,7 @@ class PstWriter:
             (NID_CONTENTS_TABLE_TEMPLATE, CONTENTS_LAYOUT),
             (NID_ASSOC_CONTENTS_TABLE_TEMPLATE, ASSOC_LAYOUT),
             (NID_ATTACHMENT_TABLE, ATTACHMENT_LAYOUT),
-            (NID_RECIPIENT_TABLE, RECIPIENT_LAYOUT),
+            (NID_RECIPIENT_TABLE, RECIPIENT_TEMPLATE_LAYOUT),
         ]
         empty += [(nid, layout(cols, cols)) for nid, cols in SYSTEM_TABLE_COLUMNS.items()]
         for nid, table in empty:

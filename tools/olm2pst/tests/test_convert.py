@@ -75,6 +75,15 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(hashlib.md5(att.read_buffer(att.size)).digest(), hashlib.md5(BIG).digest())
         first = inbox.get_sub_message(subjects.index("Quarterly report"))
         self.assertEqual(first.sender_name, "Alice Example")
+        # Reading the recipient table catches malformed TC column layouts, which
+        # libpst ignores but Outlook rejects when copying messages.
+        recipients = first.recipients
+        names = []
+        for i in range(recipients.number_of_record_sets):  # one record set per row
+            for entry in recipients.get_record_set(i).entries:
+                if entry.entry_type == 0x3001:
+                    names.append(entry.data_as_string)
+        self.assertEqual(sorted(names), ["Bob", "Me"])
         self.assertIn("é".encode(), first.html_body)
         self.assertEqual(first.delivery_time, datetime(2024, 3, 1, 9, 15, 5))
         f.close()

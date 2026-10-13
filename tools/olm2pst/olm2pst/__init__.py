@@ -1,3 +1,3 @@
 """Convert Outlook for Mac archives (.olm) to PST, EML or MBOX."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"

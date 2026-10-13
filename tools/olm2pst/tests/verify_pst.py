@@ -341,7 +341,11 @@ class Checker:
             self.err(f"node 0x{nid:x}: BTH keys not ascending/unique")
         return recs
 
-    def tc_rows(self, nid: int, bdata: int) -> list[int]:
+    def tc_rows(self, nid: int, bdata: int, bsub: int | None = None) -> list[int]:
+        """Check a TC and return its row IDs. ``bsub`` is the subnode BTree that
+        holds its row matrix (defaults to the top-level node's own)."""
+        if bsub is None:
+            bsub = self.nbt[nid][1]
         items = self.heap(nid, self.stream_blocks(bdata))
         root = struct.unpack_from("<I", self.stream_blocks(bdata)[0], 4)[0]
         info = items[root]
@@ -355,8 +359,17 @@ class Checker:
             self.err(f"node 0x{nid:x}: columns not sorted by tag")
         if rgib[3] != rgib[2] + (ccols + 7) // 8:
             self.err(f"node 0x{nid:x}: rgib[TCI_bm] wrong")
+        cols = [struct.unpack_from("<IHBB", info, 22 + 8 * i) for i in range(ccols)]
+        if sorted(c[3] for c in cols) != list(range(ccols)):
+            self.err(f"node 0x{nid:x}: TC presence bits are not 0..{ccols - 1}")
+        cells = bytearray(rgib[2])
+        for tag, ib, cb, _ in cols:
+            group = (0, rgib[0]) if cb >= 4 else ((rgib[0], rgib[1]) if cb == 2 else (rgib[1], rgib[2]))
+            if not group[0] <= ib <= ib + cb <= group[1] or any(cells[ib:ib + cb]):
+                self.err(f"node 0x{nid:x}: column 0x{tag:08x} overlaps or is outside its group")
+            cells[ib:ib + cb] = b"\x01" * cb
         if hnid_rows & 0x1F:  # row matrix lives in a subnode
-            blocks = self.stream_blocks(self.subnode_data(nid, hnid_rows))
+            blocks = self.stream_blocks(self.subnode_data(nid, hnid_rows, bsub))
             if any(len(b) != 8176 for b in blocks[:-1]):
                 self.err(f"node 0x{nid:x}: row matrix block other than the last is not 8176 bytes")
         recs = self.bth(nid, items, hid_rows_index, 4, 4)
@@ -365,7 +378,21 @@ class Checker:
             self.err(f"node 0x{nid:x}: RowIndex does not cover rows 0..n-1")
         return [k for k, _ in recs]
 
-    def subnode_data(self, nid: int, sub_nid: int) -> int:
+    def subnodes(self, bid_sub: int) -> dict[int, tuple[int, int]]:
+        out: dict[int, tuple[int, int]] = {}
+        if not bid_sub:
+            return out
+        d = self.read_block(bid_sub)
+        _, level, cent = struct.unpack_from("<BBH", d)
+        for i in range(cent):
+            if level == 0:
+                n, bd, bs = struct.unpack_from("<QQQ", d, 8 + i * 24)
+                out[n] = (bd, bs)
+            else:
+                out.update(self.subnodes(struct.unpack_from("<QQ", d, 8 + i * 16)[1]))
+        return out
+
+    def subnode_data(self, nid: int, sub_nid: int, bid_sub: int) -> int:
         def find(bid: int) -> int:
             d = self.read_block(bid)
             _, level, cent = struct.unpack_from("<BBH", d)
@@ -380,7 +407,6 @@ class Checker:
                         return found
             return 0
 
-        bid_sub = self.nbt[nid][1]
         found = find(bid_sub) if bid_sub else 0
         if not found:
             self.err(f"node 0x{nid:x}: subnode 0x{sub_nid:x} missing")
@@ -405,6 +431,16 @@ class Checker:
             if ct != msgs:
                 self.err(f"folder 0x{f:x}: contents table does not match child messages")
         for nid, (bdata, bsub, _) in self.nbt.items():
+            if nid & 0x1F in (0xB, 0xC, 0xD, 0xE, 0xF, 0x10, 0x11, 0x12, 0x16, 0x17, 0x18) and bdata:
+                self.tc_rows(nid, bdata)
+            if nid & 0x1F == 4:  # recipient and attachment tables inside messages
+                for sub_nid, (sbd, sbs) in self.subnodes(bsub).items():
+                    if sub_nid & 0x1F in (0x11, 0x12):
+                        rows = self.tc_rows(nid, sbd, sbs)
+                        if sub_nid & 0x1F == 0x11:
+                            atts = {n for n in self.subnodes(bsub) if n & 0x1F == 5}
+                            if set(rows) != atts:
+                                self.err(f"message 0x{nid:x}: attachment table rows do not match attachments")
             if nid & 0x1F in (2, 4) or nid in (0x21, 0x61):
                 blocks = self.stream_blocks(bdata)
                 items = self.heap(nid, blocks)

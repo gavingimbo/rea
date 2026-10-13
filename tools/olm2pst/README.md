@@ -118,6 +118,13 @@ builds the two exes with PyInstaller and checks the exe's output with the verifi
   not allocated in AMAP", and Outlook can then overwrite data in the file.
   Convert again from the `.olm` rather than repairing an old PST. The bit
   order is now checked against Outlook-created PSTs and by a regression test.
+- **Fixed in 0.1.3: messages couldn't be imported.** Recipient tables used a
+  column layout copied from the [MS-PST] sample. The sample lists only 28 of
+  its 29 columns, so one column's presence bit pointed past the end. Outlook
+  opened the PST and listed the messages but failed to copy them, and libpff
+  refused to read the recipients. Table layouts are now validated when they
+  are built, and the verifier checks every table, including the ones inside
+  messages. Convert again from the `.olm`.
 - 0.1.2 writes the system tables Outlook adds when it first opens a PST
   (search template, receive-folder, outgoing-queue and three replication
   tables, plus an index node). It also uses Outlook's default "compressible"

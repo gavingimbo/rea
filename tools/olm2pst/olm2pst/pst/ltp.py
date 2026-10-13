@@ -331,7 +331,27 @@ def layout(tags: Iterable[int], fixed: Mapping[int, tuple[int, int, int]] | None
     end_2b = max([c.ib + c.cb for c in cols if c.cb == 2] + [end_4b])
     end_1b = max([c.ib + c.cb for c in cols if c.cb == 1] + [end_2b])
     row_size = end_1b + (len(cols) + 7) // 8
+    _check_layout(cols, end_4b, end_2b)
     return TableLayout(tuple(sorted(cols, key=lambda c: c.tag)), end_4b, end_2b, end_1b, row_size)
+
+
+def _check_layout(cols: list[Column], end_4b: int, end_2b: int) -> None:
+    """Reject layouts readers cannot use: presence bits must number the
+    columns 0..n-1 ([MS-PST] 2.3.4.4.1), cells must not overlap, and each cell
+    must sit in the group for its size."""
+    if sorted(c.ibit for c in cols) != list(range(len(cols))):
+        raise PstFormatError("TC presence bits must be 0..n-1")
+    if len({c.tag for c in cols}) != len(cols):
+        raise PstFormatError("duplicate TC column")
+    used = bytearray(end_2b + 64 + len(cols))
+    for c in cols:
+        if c.cb != _cell_size(c.tag):
+            raise PstFormatError(f"column 0x{c.tag:08x} has width {c.cb}")
+        start = {8: 0, 4: 0, 2: end_4b, 1: end_2b}[c.cb]
+        limit = end_4b if c.cb >= 4 else (end_2b if c.cb == 2 else len(used))
+        if not (start <= c.ib and c.ib + c.cb <= limit) or any(used[c.ib:c.ib + c.cb]):
+            raise PstFormatError(f"column 0x{c.tag:08x} overlaps or is misplaced")
+        used[c.ib:c.ib + c.cb] = b"\x01" * c.cb
 
 
 def build_tc(table: TableLayout, rows: Sequence[tuple[int, Mapping[int, object]]],
